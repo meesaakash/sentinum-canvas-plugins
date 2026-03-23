@@ -1,0 +1,26 @@
+{
+  "sdk_version": "0.112.0",
+  "plugin_version": "0.1.0",
+  "name": "livekit_scribe",
+  "description": "Self-hosted AI scribe via LiveKit WebRTC — full hyperscribe feature parity",
+  "components": {
+    "protocols": [
+      {"class": "livekit_scribe.handlers.capture_button:CaptureButton", "description": "Scribe button in note header toolbar"},
+      {"class": "livekit_scribe.handlers.capture_view:CaptureView", "description": "Serves recording UI and LiveKit token endpoint"},
+      {"class": "livekit_scribe.handlers.case_builder:CaseBuilder", "description": "Receives AI commands from agent and applies them to note"},
+      {"class": "livekit_scribe.handlers.progress_display:ProgressDisplay", "description": "Stores and broadcasts live transcription progress"}
+    ]
+  },
+  "secrets": [
+    "LiveKitUrl",
+    "LiveKitApiKey",
+    "LiveKitApiSecret",
+    "GeminiApiKey",
+    "APISigningKey"
+  ],
+  "tags": {},
+  "references": [],
+  "license": "",
+  "diagram": false,
+  "readme": "./README.md"
+}

@@ -1,0 +1,29 @@
+{
+    "sdk_version": "0.112.0",
+    "plugin_version": "0.0.1",
+    "name": "ccm_call_ingestor",
+    "description": "Receives processed CCM phone call data from an external microservice and creates a pre-populated encounter note for nurse review.",
+    "url_permissions": [
+        {
+            "url": "https://www.canvasmedical.com/extensions",
+            "permissions": []
+        }
+    ],
+    "components": {
+        "protocols": [
+            {
+                "class": "ccm_call_ingestor.handlers.ccm_ingestor:CCMCallIngestor",
+                "description": "HTTP endpoint that ingests CCM call data and creates a Canvas encounter note with HPI, condition assessments, care plan, and goals for nurse review."
+            }
+        ]
+    },
+    "secrets": [
+        "simpleapi-api-key",
+        "NOTE_TYPE_ID"
+    ],
+    "tags": {},
+    "references": [],
+    "license": "",
+    "diagram": false,
+    "readme": "./README.md"
+}

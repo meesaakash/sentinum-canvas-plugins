@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Scribe</title>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #212529; }
+    .container { max-width: 520px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #1a1a2e; }
+    .status-bar {
+      display: flex; align-items: center; gap: 10px;
+      background: #fff; border: 1px solid #dee2e6; border-radius: 8px;
+      padding: 12px 16px; margin-bottom: 16px;
+    }
+    .status-dot {
+      width: 12px; height: 12px; border-radius: 50%; background: #adb5bd; flex-shrink: 0;
+    }
+    .status-dot.connecting { background: #ffc107; animation: pulse 1s infinite; }
+    .status-dot.recording { background: #dc3545; animation: pulse 0.8s infinite; }
+    .status-dot.processing { background: #0d6efd; animation: pulse 1s infinite; }
+    .status-dot.done { background: #198754; }
+    .status-dot.error { background: #dc3545; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    #status-text { font-size: 14px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 20px; border-radius: 6px; border: none;
+      font-size: 15px; font-weight: 500; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-record { background: #dc3545; color: #fff; width: 100%; justify-content: center; }
+    .btn-record:hover { background: #c82333; }
+    .btn-record:disabled { background: #adb5bd; cursor: not-allowed; }
+    .btn-stop { background: #6c757d; color: #fff; width: 100%; justify-content: center; }
+    .btn-stop:hover { background: #5a6268; }
+    #record-btn { margin-bottom: 16px; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+    .tab-btn {
+      padding: 6px 14px; border-radius: 4px; border: 1px solid #dee2e6;
+      background: #fff; font-size: 13px; cursor: pointer; color: #495057;
+    }
+    .tab-btn.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .log-box {
+      background: #fff; border: 1px solid #dee2e6; border-radius: 6px;
+      padding: 12px; min-height: 200px; max-height: 340px; overflow-y: auto;
+      font-size: 13px; line-height: 1.6;
+    }
+    .log-entry { margin-bottom: 6px; }
+    .log-entry .ts { color: #6c757d; font-size: 11px; margin-right: 6px; }
+    .log-entry.transcript .text { color: #212529; }
+    .log-entry.event .text { color: #0d6efd; }
+    .log-entry.error .text { color: #dc3545; }
+    .command-item {
+      background: #fff; border: 1px solid #dee2e6; border-radius: 6px;
+      padding: 8px 12px; margin-bottom: 6px; font-size: 13px;
+    }
+    .command-name { font-weight: 600; color: #1a1a2e; }
+    .command-attrs { color: #495057; font-size: 12px; margin-top: 2px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🎙 AI Scribe</h1>
+
+  <div class="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Ready</span>
+  </div>
+
+  <button id="record-btn" class="btn btn-record" onclick="toggleRecording()">
+    <span id="btn-icon">▶</span>
+    <span id="btn-label">Start Recording</span>
+  </button>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('transcript')">Transcript</button>
+    <button class="tab-btn" onclick="showTab('commands')">Commands</button>
+    <button class="tab-btn" onclick="showTab('log')">Log</button>
+  </div>
+
+  <div id="tab-transcript" class="tab-content active">
+    <div class="log-box" id="transcript-box"><em style="color:#adb5bd">Transcript will appear here during recording...</em></div>
+  </div>
+  <div id="tab-commands" class="tab-content">
+    <div id="commands-box"><em style="color:#adb5bd" style="font-size:13px">Commands applied to note will appear here...</em></div>
+  </div>
+  <div id="tab-log" class="tab-content">
+    <div class="log-box" id="log-box"></div>
+  </div>
+</div>
+
+<script>
+const TOKEN_URL = "{{ token_url }}";
+const PROGRESS_URL = "{{ progress_url }}";
+const NOTE_UUID = "{{ note_uuid }}";
+
+let room = null;
+let isRecording = false;
+let localTrack = null;
+let pollInterval = null;
+let seenMessages = new Set();
+
+function showTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    const names = ['transcript', 'commands', 'log'];
+    b.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(el => {
+    el.classList.toggle('active', el.id === `tab-${name}`);
+  });
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById('status-dot');
+  dot.className = `status-dot ${state}`;
+  document.getElementById('status-text').textContent = text;
+}
+
+function addLog(type, text, ts) {
+  const box = document.getElementById('log-box');
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  entry.innerHTML = `<span class="ts">${ts || new Date().toLocaleTimeString()}</span><span class="text">${escHtml(text)}</span>`;
+  box.appendChild(entry);
+  box.scrollTop = box.scrollHeight;
+}
+
+function addTranscript(text, ts) {
+  const box = document.getElementById('transcript-box');
+  if (box.querySelector('em')) box.innerHTML = '';
+  const entry = document.createElement('div');
+  entry.className = 'log-entry transcript';
+  entry.innerHTML = `<span class="ts">${ts || new Date().toLocaleTimeString()}</span><span class="text">${escHtml(text)}</span>`;
+  box.appendChild(entry);
+  box.scrollTop = box.scrollHeight;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function startProgressPolling() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(fetchProgress, 2000);
+}
+
+function stopProgressPolling() {
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+}
+
+async function fetchProgress() {
+  try {
+    const resp = await fetch(PROGRESS_URL);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    for (const msg of (data.messages || [])) {
+      const key = `${msg.time}:${msg.message}`;
+      if (seenMessages.has(key)) continue;
+      seenMessages.add(key);
+      const ts = new Date(msg.time).toLocaleTimeString();
+      if (msg.section === 'TRANSCRIPT') {
+        addTranscript(msg.message, ts);
+      } else {
+        addLog('event', msg.message, ts);
+        // Parse commands from done message
+        if (msg.message && msg.message.startsWith('Done —')) {
+          setStatus('done', msg.message);
+          stopProgressPolling();
+        } else if (msg.message && msg.message.includes('pipeline')) {
+          setStatus('processing', 'Processing...');
+        }
+      }
+    }
+  } catch (e) {
+    // ignore poll errors
+  }
+}
+
+async function toggleRecording() {
+  if (isRecording) {
+    await stopRecording();
+  } else {
+    await startRecording();
+  }
+}
+
+async function startRecording() {
+  const btn = document.getElementById('record-btn');
+  btn.disabled = true;
+  setStatus('connecting', 'Connecting...');
+  addLog('event', 'Fetching LiveKit token...');
+
+  try {
+    const resp = await fetch(TOKEN_URL);
+    if (!resp.ok) throw new Error(`Token fetch failed: ${resp.status}`);
+    const { token, url } = await resp.json();
+
+    addLog('event', `Connecting to LiveKit at ${url}...`);
+    room = new LivekitClient.Room();
+    await room.connect(url, token);
+    addLog('event', 'Connected to room');
+
+    localTrack = await LivekitClient.createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true });
+    await room.localParticipant.publishTrack(localTrack);
+
+    isRecording = true;
+    setStatus('recording', 'Recording...');
+    btn.className = 'btn btn-stop';
+    document.getElementById('btn-icon').textContent = '⏹';
+    document.getElementById('btn-label').textContent = 'Stop Recording';
+    btn.disabled = false;
+
+    startProgressPolling();
+    addLog('event', 'Microphone active — speak now');
+  } catch (err) {
+    setStatus('error', 'Connection failed');
+    addLog('error', `Error: ${err.message}`);
+    btn.disabled = false;
+    if (room) { room.disconnect(); room = null; }
+  }
+}
+
+async function stopRecording() {
+  const btn = document.getElementById('record-btn');
+  btn.disabled = true;
+  addLog('event', 'Stopping recording...');
+
+  if (localTrack) {
+    await room.localParticipant.unpublishTrack(localTrack);
+    localTrack.stop();
+    localTrack = null;
+  }
+  if (room) {
+    await room.disconnect();
+    room = null;
+  }
+
+  isRecording = false;
+  setStatus('processing', 'Processing with AI...');
+  btn.className = 'btn btn-record';
+  document.getElementById('btn-icon').textContent = '▶';
+  document.getElementById('btn-label').textContent = 'Start New Recording';
+  btn.disabled = false;
+
+  addLog('event', 'Recording stopped — agent is processing transcript');
+}
+</script>
+</body>
+</html>
