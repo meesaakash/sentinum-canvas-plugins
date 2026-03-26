@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sentinum-intake"
+version = "0.1.0"
+dependencies = ["canvas[test-utils]"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["sentinum_intake"]
+
+[tool.pytest.ini_options]
+addopts = "--tb=short"

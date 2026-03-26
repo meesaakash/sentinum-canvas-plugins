@@ -1,0 +1,29 @@
+{
+    "sdk_version": "0.112.0",
+    "plugin_version": "0.1.0",
+    "name": "sentinum_intake",
+    "description": "Sends patients a secure intake form link when their appointment is created. On submission, populates the encounter note with intake answers and checks the patient in.",
+    "url_permissions": [],
+    "components": {
+        "protocols": [
+            {
+                "class": "sentinum_intake.protocols.appointment_handler:AppointmentCreatedHandler",
+                "description": "On APPOINTMENT_CREATED, generates a signed HMAC intake form link and logs it (Twilio SMS stub). Sends immediately regardless of appointment timing."
+            },
+            {
+                "class": "sentinum_intake.protocols.intake_api:IntakeFormAPI",
+                "description": "Serves the HTML intake form (GET /form), processes form submission (POST /submit), and provides a dev link for local testing (GET /dev-link)."
+            }
+        ]
+    },
+    "secrets": [
+        "intake-api-secret",
+        "intake-base-url",
+        "DEV_MODE"
+    ],
+    "tags": {},
+    "references": [],
+    "license": "",
+    "diagram": false,
+    "readme": "./README.md"
+}

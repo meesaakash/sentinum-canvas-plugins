@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patient Intake Form — Sentinum Health</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f4f8;
+      color: #1a202c;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .header {
+      background: #1a56db;
+      color: white;
+      border-radius: 12px 12px 0 0;
+      padding: 2rem;
+    }
+    .header h1 { font-size: 1.5rem; font-weight: 700; }
+    .header p { margin-top: 0.5rem; opacity: 0.85; font-size: 0.95rem; }
+    .form-body {
+      background: white;
+      border-radius: 0 0 12px 12px;
+      padding: 2rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+    .section {
+      margin-bottom: 2.5rem;
+    }
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1a56db;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .field {
+      margin-bottom: 1.25rem;
+    }
+    label {
+      display: block;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #2d3748;
+      margin-bottom: 0.4rem;
+    }
+    label .required { color: #e53e3e; margin-left: 2px; }
+    input[type="text"], input[type="number"], textarea, select {
+      width: 100%;
+      padding: 0.6rem 0.85rem;
+      border: 1.5px solid #cbd5e0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      color: #2d3748;
+      background: #f7fafc;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus, input[type="number"]:focus,
+    textarea:focus, select:focus {
+      outline: none;
+      border-color: #1a56db;
+      background: white;
+    }
+    textarea { resize: vertical; min-height: 72px; }
+    .radio-group, .checkbox-group {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .radio-group label, .checkbox-group label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-weight: 400;
+      cursor: pointer;
+    }
+    input[type="radio"], input[type="checkbox"] {
+      width: 1rem; height: 1rem; cursor: pointer;
+    }
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    input[type="range"] {
+      flex: 1;
+      accent-color: #1a56db;
+    }
+    .range-value {
+      font-weight: 700;
+      color: #1a56db;
+      min-width: 2rem;
+      text-align: center;
+    }
+    .submit-btn {
+      width: 100%;
+      padding: 0.9rem;
+      background: #1a56db;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 0.5rem;
+    }
+    .submit-btn:hover { background: #1648c0; }
+    .submit-btn:disabled { background: #a0aec0; cursor: not-allowed; }
+    #confirmation {
+      display: none;
+      text-align: center;
+      padding: 3rem 2rem;
+    }
+    #confirmation .check { font-size: 3.5rem; margin-bottom: 1rem; }
+    #confirmation h2 { font-size: 1.4rem; color: #276749; margin-bottom: 0.5rem; }
+    #confirmation p { color: #4a5568; }
+    #error-msg {
+      display: none;
+      background: #fff5f5;
+      color: #c53030;
+      border: 1px solid #fed7d7;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Patient Intake Form</h1>
+    <p>Hello{% if patient_name %}, <strong>{{ patient_name }}</strong>{% endif %}. Please complete this form before your appointment. It takes about 3–5 minutes.</p>
+  </div>
+
+  <div class="form-body">
+    <div id="error-msg"></div>
+
+    <form id="intakeForm">
+      <!-- Hidden fields -->
+      <input type="hidden" name="token" value="{{ token }}" />
+      <input type="hidden" name="apt" value="{{ apt }}" />
+      <input type="hidden" name="pid" value="{{ pid }}" />
+      <input type="hidden" name="exp" value="{{ exp }}" />
+
+      <!-- Section 1: Telehealth Consents -->
+      <div class="section">
+        <div class="section-title">Telehealth &amp; Administrative Consents</div>
+
+        <div class="field">
+          <label>Are you in a private, safe, and well-lit location? <span class="required">*</span></label>
+          <div class="radio-group">
+            <label><input type="radio" name="private_location" value="Yes" required /> Yes</label>
+            <label><input type="radio" name="private_location" value="No" /> No</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Please confirm your full name and date of birth <span class="required">*</span></label>
+          <input type="text" name="name_dob_confirm" placeholder="e.g. Jane Doe, 01/01/1985" required />
+        </div>
+
+        <div class="field">
+          <label>What is your current physical address? <span class="required">*</span>
+            <span style="font-weight:400;font-size:0.82rem;color:#718096"> (Required for state licensing and emergency dispatch)</span>
+          </label>
+          <input type="text" name="current_address" placeholder="123 Main St, City, State ZIP" required />
+        </div>
+
+        <div class="field">
+          <label>Do you consent to receiving care via telehealth today? <span class="required">*</span></label>
+          <div class="radio-group">
+            <label><input type="radio" name="telehealth_consent" value="Yes" required /> Yes, I consent</label>
+            <label><input type="radio" name="telehealth_consent" value="No" /> No</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Can you hear and see clearly? <span class="required">*</span></label>
+          <div class="radio-group">
+            <label><input type="radio" name="av_quality" value="Yes, clear" required /> Yes, clear</label>
+            <label><input type="radio" name="av_quality" value="Audio only" /> Audio only</label>
+            <label><input type="radio" name="av_quality" value="Issues" /> Having issues</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Chief Complaint / HPI -->
+      <div class="section">
+        <div class="section-title">Chief Complaint &amp; History of Present Illness</div>
+
+        <div class="field">
+          <label>What is the primary reason for your visit today? <span class="required">*</span></label>
+          <textarea name="chief_complaint" placeholder="Describe your main concern..." required></textarea>
+        </div>
+
+        <div class="field">
+          <label>When did your symptoms begin, and how often are they occurring?</label>
+          <input type="text" name="symptom_onset" placeholder="e.g. 3 days ago, constant" />
+        </div>
+
+        <div class="field">
+          <label>Severity of symptoms (1 = mild, 10 = severe)</label>
+          <div class="range-row">
+            <input type="range" name="severity" min="1" max="10" value="5"
+              oninput="document.getElementById('severity-val').textContent = this.value" />
+            <span class="range-value" id="severity-val">5</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Does anything make symptoms better or worse?</label>
+          <textarea name="better_worse" placeholder="e.g. worse when lying down, better after rest..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Are you experiencing any other new or related symptoms?</label>
+          <textarea name="other_symptoms" placeholder="e.g. mild fever, fatigue..."></textarea>
+        </div>
+      </div>
+
+      <!-- Section 3: Medical & Surgical History -->
+      <div class="section">
+        <div class="section-title">Medical &amp; Surgical History</div>
+
+        <div class="field">
+          <label>Do you have any chronic medical conditions?</label>
+          <textarea name="chronic_conditions" placeholder="e.g. hypertension, diabetes, asthma..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Have you had any previous surgeries or recent hospitalizations?</label>
+          <textarea name="surgeries" placeholder="e.g. appendectomy 2015, hospitalized for pneumonia 2022..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Are you currently under the care of any specialists?</label>
+          <input type="text" name="specialists" placeholder="e.g. Cardiologist Dr. Smith" />
+        </div>
+      </div>
+
+      <!-- Section 4: Medications & Allergies -->
+      <div class="section">
+        <div class="section-title">Medications &amp; Allergies</div>
+
+        <div class="field">
+          <label>What prescription medications are you currently taking?
+            <span style="font-weight:400;font-size:0.82rem;color:#718096"> (Include dose and frequency)</span>
+          </label>
+          <textarea name="rx_medications" placeholder="e.g. Lisinopril 10mg daily, Metformin 500mg twice daily..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Are you taking any OTC medications, vitamins, or supplements?</label>
+          <textarea name="otc_supplements" placeholder="e.g. Vitamin D 2000IU daily, Fish oil..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Do you have any known allergies?
+            <span style="font-weight:400;font-size:0.82rem;color:#718096"> (Medications, foods, environmental — include reaction)</span>
+          </label>
+          <textarea name="allergies" placeholder="e.g. Penicillin → rash, Shellfish → anaphylaxis..."></textarea>
+        </div>
+      </div>
+
+      <!-- Section 5: Social & Family History -->
+      <div class="section">
+        <div class="section-title">Social &amp; Family History</div>
+
+        <div class="field">
+          <label>Do you smoke, vape, or use tobacco products?</label>
+          <div class="radio-group">
+            <label><input type="radio" name="tobacco" value="Never" /> Never</label>
+            <label><input type="radio" name="tobacco" value="Former" /> Former</label>
+            <label><input type="radio" name="tobacco" value="Current" /> Current</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>How often do you consume alcohol, and how many drinks per week?</label>
+          <input type="text" name="alcohol" placeholder="e.g. Occasionally, 2–3 drinks/week" />
+        </div>
+
+        <div class="field">
+          <label>Do you use any recreational drugs?</label>
+          <div class="radio-group">
+            <label><input type="radio" name="recreational_drugs" value="No" /> No</label>
+            <label><input type="radio" name="recreational_drugs" value="Occasionally" /> Occasionally</label>
+            <label><input type="radio" name="recreational_drugs" value="Regularly" /> Regularly</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Family history of major conditions?</label>
+          <textarea name="family_history" placeholder="e.g. Father — heart disease; Mother — Type 2 diabetes..."></textarea>
+        </div>
+      </div>
+
+      <!-- Section 6: Vitals & Wellness -->
+      <div class="section">
+        <div class="section-title">Home Vitals &amp; General Wellness</div>
+
+        <div class="field">
+          <label>Do you have home vitals to report?
+            <span style="font-weight:400;font-size:0.82rem;color:#718096"> (BP, HR, temperature, weight — leave blank if unavailable)</span>
+          </label>
+          <input type="text" name="home_vitals" placeholder="e.g. BP 128/78, HR 72, Temp 98.6°F, Weight 175 lbs" />
+        </div>
+
+        <div class="field">
+          <label>Any recent changes in appetite, sleep, or energy levels?</label>
+          <textarea name="wellness_changes" placeholder="e.g. Sleeping poorly for 1 week, appetite decreased..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>PHQ-2: Over the past 2 weeks, how often have you felt down, depressed, or hopeless? <span class="required">*</span></label>
+          <div class="radio-group" style="flex-direction:column;gap:0.5rem;">
+            <label><input type="radio" name="phq2" value="0 - Not at all" required /> Not at all</label>
+            <label><input type="radio" name="phq2" value="1 - Several days" /> Several days</label>
+            <label><input type="radio" name="phq2" value="2 - More than half the days" /> More than half the days</label>
+            <label><input type="radio" name="phq2" value="3 - Nearly every day" /> Nearly every day</label>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="submit-btn" id="submitBtn">Submit Intake Form</button>
+    </form>
+
+    <div id="confirmation">
+      <div class="check">✓</div>
+      <h2>Intake Complete</h2>
+      <p>Thank you! Your responses have been sent to your provider.<br>You're all set — your provider will be with you shortly.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  const form = document.getElementById('intakeForm');
+  const confirmation = document.getElementById('confirmation');
+  const submitBtn = document.getElementById('submitBtn');
+  const errorMsg = document.getElementById('error-msg');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+    errorMsg.style.display = 'none';
+
+    const data = {};
+    const fd = new FormData(form);
+    for (const [k, v] of fd.entries()) data[k] = v;
+    // Severity is a number
+    if (data.severity) data.severity = parseInt(data.severity, 10);
+
+    try {
+      const resp = await fetch('/plugin-io/api/sentinum_intake/intake/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (resp.ok) {
+        form.style.display = 'none';
+        confirmation.style.display = 'block';
+      } else {
+        const body = await resp.json().catch(() => ({}));
+        errorMsg.textContent = body.error || 'Submission failed. Please try again.';
+        errorMsg.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit Intake Form';
+      }
+    } catch (err) {
+      errorMsg.textContent = 'Network error. Please check your connection and try again.';
+      errorMsg.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Intake Form';
+    }
+  });
+</script>
+</body>
+</html>
