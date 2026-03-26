@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ccm-auto-billing"
+version = "0.1.0"
+dependencies = ["canvas[test-utils]", "arrow", "requests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["ccm_auto_billing"]
+
+[tool.pytest.ini_options]
+addopts = "--tb=short"

@@ -1,0 +1,28 @@
+{
+    "sdk_version": "0.112.0",
+    "plugin_version": "0.1.0",
+    "name": "ccm_auto_billing",
+    "description": "Ingests CCM/PCM phone call data, creates encounter notes with billing line items (99490/99424), and auto-routes claims to the submission queue.",
+    "url_permissions": [],
+    "components": {
+        "protocols": [
+            {
+                "class": "ccm_auto_billing.protocols.ingest_handler:CCMAutoIngestor",
+                "description": "HTTP endpoint that ingests CCM call data, creates a Canvas encounter note with HPI/assess/plan/goal commands and a CPT billing line item (99490 or 99424)."
+            },
+            {
+                "class": "ccm_auto_billing.protocols.claim_router:CCMClaimRouter",
+                "description": "Listens for CLAIM_CREATED events and auto-routes CCM/PCM claims to QUEUED_FOR_SUBMISSION."
+            }
+        ]
+    },
+    "secrets": [
+        "simpleapi-api-key",
+        "NOTE_TYPE_ID"
+    ],
+    "tags": {},
+    "references": [],
+    "license": "",
+    "diagram": false,
+    "readme": "./README.md"
+}
