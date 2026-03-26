@@ -153,14 +153,17 @@ def lookup_conditions(token: str, patient_id: str) -> list[dict]:
         return []
 
     entries = data.get("entry", [])
+
     matched = []
     unmatched = []
+    seen_codes: set[str] = set()  # deduplicate by ICD-10 code
 
     for entry in entries:
         resource = entry.get("resource", {})
         condition_id = str(resource.get("id", ""))
-        # Extract ICD-10 code (Canvas may use icd-10-cm or other system URLs)
-        codings = resource.get("code", {}).get("coding", [])
+        # Canvas puts coding[] directly on the resource (not nested under code.coding)
+        # System value is "ICD-10" (not a URL)
+        codings = resource.get("coding", [])
         icd_coding = next(
             (c for c in codings if "icd-10" in c.get("system", "").lower()),
             codings[0] if codings else {},
@@ -177,8 +180,12 @@ def lookup_conditions(token: str, patient_id: str) -> list[dict]:
             "_display": display,
         }
         if norm in {_normalise_code(c) for c in TARGET_CODES}:
-            matched.append(rec)
-            print(f"  ✓ {condition_id:>6}  {raw_code:<8}  {display}")
+            if norm not in seen_codes:
+                seen_codes.add(norm)
+                matched.append(rec)
+                print(f"  ✓ {condition_id:>6}  {raw_code:<8}  {display}")
+            else:
+                print(f"  ~ {condition_id:>6}  {raw_code:<8}  {display}  (duplicate — skipped)")
         else:
             unmatched.append(rec)
 

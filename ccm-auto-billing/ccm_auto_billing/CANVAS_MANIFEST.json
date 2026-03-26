@@ -13,12 +13,17 @@
             {
                 "class": "ccm_auto_billing.protocols.claim_router:CCMClaimRouter",
                 "description": "Listens for CLAIM_CREATED events and auto-routes CCM/PCM claims to QUEUED_FOR_SUBMISSION."
+            },
+            {
+                "class": "ccm_auto_billing.protocols.note_state_linker:CCMNoteStateLinker",
+                "description": "When a CCM encounter note is locked, links assessment IDs as diagnosis pointers on the billing line item to resolve claim validation errors."
             }
         ]
     },
     "secrets": [
         "simpleapi-api-key",
-        "NOTE_TYPE_ID"
+        "NOTE_TYPE_ID",
+        "PRIVATE_NOTE_TYPE_ID"
     ],
     "tags": {},
     "references": [],

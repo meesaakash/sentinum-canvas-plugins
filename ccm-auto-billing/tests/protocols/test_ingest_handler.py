@@ -27,7 +27,14 @@ from canvas_sdk.test_utils.factories import (
 )
 from canvas_sdk.v1.data.note import NoteTypeCategories
 
-from ccm_auto_billing.protocols.ingest_handler import CCMAutoIngestor, _select_cpt, CPT_CCM, CPT_PCM
+from ccm_auto_billing.protocols.ingest_handler import (
+    CCMAutoIngestor,
+    _resolve_condition_uuid,
+    _select_cpt,
+    _validate_cpt_code,
+    CPT_CCM,
+    CPT_PCM,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +120,22 @@ def valid_payload(db_fixtures) -> dict:
         "goals": ["Maintain HbA1c < 7.5%", "Keep BP < 130/80"],
         "action_items": [],
     }
+
+
+# Patch that bypasses ChargeDescriptionMaster DB validation in success-path tests
+_SKIP_CPT_VALIDATION = patch(
+    "ccm_auto_billing.protocols.ingest_handler._validate_cpt_code",
+    return_value=None,
+)
+# Patch that returns a fake UUID for condition resolution (integer → UUID)
+_SKIP_CONDITION_RESOLVE = patch(
+    "ccm_auto_billing.protocols.ingest_handler._resolve_condition_uuid",
+    side_effect=lambda cid: f"00000000-0000-0000-0000-{str(cid).zfill(12)}",
+)
+# Patch that suppresses private note type lookup (returns None → skips private note)
+_SKIP_PRIVATE_NOTE = patch.object(
+    CCMAutoIngestor, "_resolve_private_note_type_id", return_value=None
+)
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +283,9 @@ class TestValidation:
         with (
             patch("ccm_auto_billing.protocols.ingest_handler.Patient"),
             patch.object(handler, "_resolve_note_type_id", return_value=None),
+            _SKIP_CPT_VALIDATION,
+            _SKIP_CONDITION_RESOLVE,
+            _SKIP_PRIVATE_NOTE,
         ):
             response = get_json_response(handler.ingest_call())
         assert response.status_code == 500
@@ -300,7 +326,8 @@ class TestResolveNoteType:
 class TestSuccessfulIngest:
     def _run(self, db_fixtures: dict, payload: dict) -> list:
         handler = make_handler(payload=payload, note_type_id=db_fixtures["note_type_id"])
-        return handler.ingest_call()
+        with _SKIP_CPT_VALIDATION, _SKIP_CONDITION_RESOLVE, _SKIP_PRIVATE_NOTE:
+            return handler.ingest_call()
 
     def test_returns_201(self, db_fixtures, valid_payload) -> None:
         effects = self._run(db_fixtures, valid_payload)
@@ -356,6 +383,16 @@ class TestSuccessfulIngest:
         payload_data = json.loads(billing_effects[0].payload)
         assert payload_data["data"]["cpt"] == CPT_CCM
 
+    def test_billing_line_item_has_no_assessment_ids_at_creation(self, db_fixtures, valid_payload) -> None:
+        """At creation time, assessment_ids should be empty — CCMNoteStateLinker links them at lock."""
+        effects = self._run(db_fixtures, valid_payload)
+        billing_effects = [
+            e for e in effects
+            if hasattr(e, "type") and e.type == EffectType.ADD_BILLING_LINE_ITEM
+        ]
+        payload_data = json.loads(billing_effects[0].payload)
+        assert payload_data["data"]["assessment_ids"] == []
+
     def test_note_uuid_consistent_across_effects(self, db_fixtures, valid_payload) -> None:
         effects = self._run(db_fixtures, valid_payload)
         note_id = response_body(get_json_response(effects))["note_id"]
@@ -365,7 +402,7 @@ class TestSuccessfulIngest:
         )
         assert found, f"note_id {note_id} not found in any effect payload"
 
-    def test_task_title_contains_note_id_and_cpt(self, db_fixtures, valid_payload) -> None:
+    def test_task_title_contains_short_note_id_cpt_and_service_date(self, db_fixtures, valid_payload) -> None:
         effects = self._run(db_fixtures, valid_payload)
         note_id = response_body(get_json_response(effects))["note_id"]
         task_effects = [
@@ -373,9 +410,98 @@ class TestSuccessfulIngest:
             if hasattr(e, "type") and e.type == EffectType.CREATE_TASK
         ]
         assert len(task_effects) == 1
-        task_data = json.loads(task_effects[0].payload)["data"]
-        assert note_id in task_data["title"]
-        assert CPT_CCM in task_data["title"]
+        title = json.loads(task_effects[0].payload)["data"]["title"]
+        assert note_id[:8] in title          # short note ID
+        assert CPT_CCM in title              # CPT code
+        assert "2026-03-25" in title         # service date from payload
+        assert "[CCM Review]" in title       # prefix tag
+
+
+# ---------------------------------------------------------------------------
+# CPT validation
+# ---------------------------------------------------------------------------
+
+class TestCPTValidation:
+    def test_invalid_cpt_returns_422(self, db_fixtures, valid_payload) -> None:
+        handler = make_handler(payload=valid_payload, note_type_id=db_fixtures["note_type_id"])
+        with (
+            patch(
+                "ccm_auto_billing.protocols.ingest_handler._validate_cpt_code",
+                return_value="CPT code '99490' not found in ChargeDescriptionMaster",
+            ),
+        ):
+            response = get_json_response(handler.ingest_call())
+        assert response.status_code == 422
+        assert "99490" in response_body(response)["error"]
+
+    def test_valid_cpt_does_not_block_request(self, db_fixtures, valid_payload) -> None:
+        handler = make_handler(payload=valid_payload, note_type_id=db_fixtures["note_type_id"])
+        with _SKIP_CPT_VALIDATION, _SKIP_CONDITION_RESOLVE, _SKIP_PRIVATE_NOTE:
+            response = get_json_response(handler.ingest_call())
+        assert response.status_code == 201
+
+    def test_validate_cpt_code_returns_none_for_valid_code(self) -> None:
+        from datetime import date, timedelta
+        mock_cdm = Mock()
+        mock_cdm.end_date = None
+        mock_cdm.effective_date = date.today() - timedelta(days=1)
+        with patch("ccm_auto_billing.protocols.ingest_handler.ChargeDescriptionMaster") as mock_cls:
+            mock_cls.objects.filter.return_value.first.return_value = mock_cdm
+            assert _validate_cpt_code("99490") is None
+
+    def test_validate_cpt_code_returns_none_for_unknown_code(self) -> None:
+        """Unknown CPT codes log a warning but don't block the request."""
+        with patch("ccm_auto_billing.protocols.ingest_handler.ChargeDescriptionMaster") as mock_cls:
+            mock_cls.objects.filter.return_value.first.return_value = None
+            assert _validate_cpt_code("XXXXX") is None
+
+    def test_validate_cpt_code_returns_error_for_expired_code(self) -> None:
+        from datetime import date, timedelta
+        mock_cdm = Mock()
+        mock_cdm.end_date = date.today() - timedelta(days=1)
+        mock_cdm.effective_date = None
+        with patch("ccm_auto_billing.protocols.ingest_handler.ChargeDescriptionMaster") as mock_cls:
+            mock_cls.objects.filter.return_value.first.return_value = mock_cdm
+            result = _validate_cpt_code("99490")
+        assert result is not None
+        assert "expired" in result.lower()
+
+    def test_validate_cpt_code_returns_error_for_future_effective_date(self) -> None:
+
+        from datetime import date, timedelta
+        mock_cdm = Mock()
+        mock_cdm.end_date = None
+        mock_cdm.effective_date = date.today() + timedelta(days=30)
+        with patch("ccm_auto_billing.protocols.ingest_handler.ChargeDescriptionMaster") as mock_cls:
+            mock_cls.objects.filter.return_value.first.return_value = mock_cdm
+            result = _validate_cpt_code("99490")
+        assert result is not None
+        assert "not yet effective" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# Condition UUID resolution
+# ---------------------------------------------------------------------------
+
+class TestResolveConditionUUID:
+    def test_integer_id_is_resolved_via_db(self) -> None:
+        fake_uuid = str(uuid.uuid4())
+        with patch("ccm_auto_billing.protocols.ingest_handler.Condition") as mock_cond:
+            mock_cond.objects.filter.return_value.values_list.return_value.first.return_value = fake_uuid
+            result = _resolve_condition_uuid("42")
+        assert result == fake_uuid
+
+    def test_uuid_string_is_returned_as_is(self) -> None:
+        existing_uuid = str(uuid.uuid4())
+        assert _resolve_condition_uuid(existing_uuid) == existing_uuid
+
+    def test_empty_string_returns_none(self) -> None:
+        assert _resolve_condition_uuid("") is None
+
+    def test_db_miss_returns_none(self) -> None:
+        with patch("ccm_auto_billing.protocols.ingest_handler.Condition") as mock_cond:
+            mock_cond.objects.filter.return_value.values_list.return_value.first.return_value = None
+            assert _resolve_condition_uuid("99") is None
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +511,8 @@ class TestSuccessfulIngest:
 class TestCommandBuilding:
     def _commands(self, db_fixtures: dict, payload: dict) -> list:
         handler = make_handler(payload=payload, note_type_id=db_fixtures["note_type_id"])
-        return handler._build_commands(str(uuid.uuid4()), payload)
+        with _SKIP_CONDITION_RESOLVE:
+            return handler._build_encounter_commands(str(uuid.uuid4()), payload)
 
     def test_hpi_contains_call_summary(self, db_fixtures, valid_payload) -> None:
         cmds = self._commands(db_fixtures, valid_payload)
